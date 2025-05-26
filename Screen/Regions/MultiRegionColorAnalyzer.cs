@@ -517,6 +517,9 @@ namespace ScreenLab.Screen.Regions
                     int stride = data.Stride;
                     nint scan0 = data.Scan0;
 
+                    // Cache for point-to-direction mapping
+                    Dictionary<Point, Directions.Direction?> directionCache = new();
+
                     unsafe
                     {
                         byte* ptr = (byte*)scan0;
@@ -527,8 +530,13 @@ namespace ScreenLab.Screen.Regions
                             {
                                 Point screenPoint = new Point(Selection.X + x, Selection.Y + y);
 
-                                bool isInAnyCone = directions.Any(dir => IsInDirectionalCone(referencePoint, screenPoint, dir));
-                                if (!isInAnyCone)
+                                if (!directionCache.TryGetValue(screenPoint, out var dir))
+                                {
+                                    dir = DirectionFromPoint(referencePoint, screenPoint);
+                                    directionCache[screenPoint] = dir;
+                                }
+
+                                if (!dir.HasValue || !directions.Contains(dir.Value))
                                     continue;
 
                                 byte* pixel = ptr + y * stride + x * 4;
@@ -554,12 +562,15 @@ namespace ScreenLab.Screen.Regions
             }
 
             return matchingPoints;
-
         }
-        public List<Point> GetAllMatchingPoints(Point referencePoint, Color targetColor, Directions.Direction[] directions, int tolerance = 10, double proximity = double.MaxValue)
+        public List<Point> GetAllMatchingPoints(
+            Point referencePoint,
+            Color targetColor,
+            Directions.Direction[] directions,
+            int tolerance = 10,
+            double proximity = double.MaxValue)
         {
             var matchingPoints = new List<Point>();
-
             if (!HasSelection)
                 BeginSelection();
 
@@ -572,8 +583,10 @@ namespace ScreenLab.Screen.Regions
                 {
                     int stride = data.Stride;
                     nint scan0 = data.Scan0;
-
                     double proximitySquared = proximity * proximity;
+
+                    // Direction cache per pixel
+                    Dictionary<Point, Directions.Direction?> directionMap = new();
 
                     unsafe
                     {
@@ -592,17 +605,17 @@ namespace ScreenLab.Screen.Regions
                                 if (distanceSquared > proximitySquared)
                                     continue;
 
-                                bool isInAnyCone = directions.Any(dir => IsInDirectionalCone(referencePoint, screenPoint, dir));
-                                if (!isInAnyCone)
+                                if (!directionMap.TryGetValue(screenPoint, out var dir))
+                                {
+                                    dir = DirectionFromPoint(referencePoint, screenPoint);
+                                    directionMap[screenPoint] = dir;
+                                }
+
+                                if (!dir.HasValue || !directions.Contains(dir.Value))
                                     continue;
 
                                 byte* pixel = ptr + y * stride + x * 4;
-
-                                byte b = pixel[0];
-                                byte g = pixel[1];
-                                byte r = pixel[2];
-                                byte a = pixel[3];
-
+                                byte b = pixel[0], g = pixel[1], r = pixel[2], a = pixel[3];
                                 if (a == 0) continue;
 
                                 Color color = Color.FromArgb(a, r, g, b);
@@ -620,37 +633,28 @@ namespace ScreenLab.Screen.Regions
 
             return matchingPoints;
         }
-        public Direction DirectionFromPoint(Point referencePoint, Point target)
+        public Direction? DirectionFromPoint(Point referencePoint, Point target)
         {
             int dx = target.X - referencePoint.X;
             int dy = target.Y - referencePoint.Y;
 
             if (dx == 0 && dy == 0)
-                throw new ArgumentException("Point is the center; no direction.");
+                return null;
 
-            double angle = Math.Atan2(dy, dx) * (180.0 / Math.PI);
-
-            // Normalize angle to [0, 360)
+            double angle = Math.Atan2(-dy, dx) * (180.0 / Math.PI); // -dy: Y axis down to up
             if (angle < 0)
                 angle += 360;
 
-            // Each direction gets a 45-degree wedge
-            if (angle >= 337.5 || angle < 22.5)
-                return Direction.Right;
-            else if (angle >= 22.5 && angle < 67.5)
-                return Direction.DownRight;
-            else if (angle >= 67.5 && angle < 112.5)
-                return Direction.Down;
-            else if (angle >= 112.5 && angle < 157.5)
-                return Direction.DownLeft;
-            else if (angle >= 157.5 && angle < 202.5)
-                return Direction.Left;
-            else if (angle >= 202.5 && angle < 247.5)
-                return Direction.UpLeft;
-            else if (angle >= 247.5 && angle < 292.5)
-                return Direction.Up;
-            else // angle >= 292.5 && angle < 337.5
-                return Direction.UpRight;
+            if (angle >= 337.5 || angle < 22.5) return Directions.Direction.Right;
+            if (angle < 67.5) return Directions.Direction.UpRight;
+            if (angle < 112.5) return Directions.Direction.Up;
+            if (angle < 157.5) return Directions.Direction.UpLeft;
+            if (angle < 202.5) return Directions.Direction.Left;
+            if (angle < 247.5) return Directions.Direction.DownLeft;
+            if (angle < 292.5) return Directions.Direction.Down;
+            if (angle < 337.5) return Directions.Direction.DownRight;
+
+            return null;
         }
         public bool IsInDirectionalCone(Point referencePoint, Point target, Direction direction, double coneThresholdCos = 0.707) // ~45°
         {
