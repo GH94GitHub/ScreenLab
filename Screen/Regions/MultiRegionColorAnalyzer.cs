@@ -1,6 +1,8 @@
 ﻿using ScreenLab.Extensions;
+using ScreenLab.Models;
 using System.CodeDom;
 using System.Drawing.Imaging;
+using static ScreenLab.Models.Directions;
 
 namespace ScreenLab.Screen.Regions
 {
@@ -498,6 +500,176 @@ namespace ScreenLab.Screen.Regions
 
             return matchingPoints;
         }
+        public List<Point> GetAllMatchingPoints(Point referencePoint, Color targetColor, Directions.Direction[] directions, int tolerance = 10)
+        {
+            var matchingPoints = new List<Point>();
+
+            if (!HasSelection)
+                BeginSelection();
+
+            using (Bitmap bmp = GetBitmap())
+            {
+                Rectangle rect = new Rectangle(0, 0, bmp.Width, bmp.Height);
+                BitmapData data = bmp.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+
+                try
+                {
+                    int stride = data.Stride;
+                    nint scan0 = data.Scan0;
+
+                    unsafe
+                    {
+                        byte* ptr = (byte*)scan0;
+
+                        for (int y = 0; y < bmp.Height; y++)
+                        {
+                            for (int x = 0; x < bmp.Width; x++)
+                            {
+                                Point screenPoint = new Point(Selection.X + x, Selection.Y + y);
+
+                                bool isInAnyCone = directions.Any(dir => IsInDirectionalCone(referencePoint, screenPoint, dir));
+                                if (!isInAnyCone)
+                                    continue;
+
+                                byte* pixel = ptr + y * stride + x * 4;
+
+                                byte b = pixel[0];
+                                byte g = pixel[1];
+                                byte r = pixel[2];
+                                byte a = pixel[3];
+
+                                if (a == 0) continue;
+
+                                Color color = Color.FromArgb(a, r, g, b);
+                                if (color.IsColorMatch(targetColor, tolerance))
+                                    matchingPoints.Add(screenPoint);
+                            }
+                        }
+                    }
+                }
+                finally
+                {
+                    bmp.UnlockBits(data);
+                }
+            }
+
+            return matchingPoints;
+
+        }
+        public List<Point> GetAllMatchingPoints(Point referencePoint, Color targetColor, Directions.Direction[] directions, int tolerance = 10, double proximity = double.MaxValue)
+        {
+            var matchingPoints = new List<Point>();
+
+            if (!HasSelection)
+                BeginSelection();
+
+            using (Bitmap bmp = GetBitmap())
+            {
+                Rectangle rect = new Rectangle(0, 0, bmp.Width, bmp.Height);
+                BitmapData data = bmp.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+
+                try
+                {
+                    int stride = data.Stride;
+                    nint scan0 = data.Scan0;
+
+                    double proximitySquared = proximity * proximity;
+
+                    unsafe
+                    {
+                        byte* ptr = (byte*)scan0;
+
+                        for (int y = 0; y < bmp.Height; y++)
+                        {
+                            for (int x = 0; x < bmp.Width; x++)
+                            {
+                                Point screenPoint = new Point(Selection.X + x, Selection.Y + y);
+
+                                int dx = screenPoint.X - referencePoint.X;
+                                int dy = screenPoint.Y - referencePoint.Y;
+                                double distanceSquared = dx * dx + dy * dy;
+
+                                if (distanceSquared > proximitySquared)
+                                    continue;
+
+                                bool isInAnyCone = directions.Any(dir => IsInDirectionalCone(referencePoint, screenPoint, dir));
+                                if (!isInAnyCone)
+                                    continue;
+
+                                byte* pixel = ptr + y * stride + x * 4;
+
+                                byte b = pixel[0];
+                                byte g = pixel[1];
+                                byte r = pixel[2];
+                                byte a = pixel[3];
+
+                                if (a == 0) continue;
+
+                                Color color = Color.FromArgb(a, r, g, b);
+                                if (color.IsColorMatch(targetColor, tolerance))
+                                    matchingPoints.Add(screenPoint);
+                            }
+                        }
+                    }
+                }
+                finally
+                {
+                    bmp.UnlockBits(data);
+                }
+            }
+
+            return matchingPoints;
+        }
+        public Direction DirectionFromPoint(Point referencePoint, Point target)
+        {
+            int dx = target.X - referencePoint.X;
+            int dy = target.Y - referencePoint.Y;
+
+            if (dx == 0 && dy == 0)
+                throw new ArgumentException("Point is the center; no direction.");
+
+            double angle = Math.Atan2(dy, dx) * (180.0 / Math.PI);
+
+            // Normalize angle to [0, 360)
+            if (angle < 0)
+                angle += 360;
+
+            // Each direction gets a 45-degree wedge
+            if (angle >= 337.5 || angle < 22.5)
+                return Direction.Right;
+            else if (angle >= 22.5 && angle < 67.5)
+                return Direction.DownRight;
+            else if (angle >= 67.5 && angle < 112.5)
+                return Direction.Down;
+            else if (angle >= 112.5 && angle < 157.5)
+                return Direction.DownLeft;
+            else if (angle >= 157.5 && angle < 202.5)
+                return Direction.Left;
+            else if (angle >= 202.5 && angle < 247.5)
+                return Direction.UpLeft;
+            else if (angle >= 247.5 && angle < 292.5)
+                return Direction.Up;
+            else // angle >= 292.5 && angle < 337.5
+                return Direction.UpRight;
+        }
+        public bool IsInDirectionalCone(Point referencePoint, Point target, Direction direction, double coneThresholdCos = 0.707) // ~45°
+        {
+            if (!DirectionVectors.TryGetValue(direction, out var dirVec))
+                return false;
+
+            int dx = target.X - referencePoint.X;
+            int dy = target.Y - referencePoint.Y;
+
+            if (dx == 0 && dy == 0) return false;
+
+            double len = Math.Sqrt(dx * dx + dy * dy);
+            double dirLen = Math.Sqrt(dirVec.dx * dirVec.dx + dirVec.dy * dirVec.dy);
+
+            double dot = (dx * dirVec.dx + dy * dirVec.dy) / (len * dirLen); // Cosine of angle
+
+            return dot >= coneThresholdCos; // e.g. cos(45°) = ~0.707
+        }
+
 
         static MultiRegionColorAnalyzer IRegionAnalyzerFactory<MultiRegionColorAnalyzer>.Create(string name, Rectangle region) => new(name, region);
     }

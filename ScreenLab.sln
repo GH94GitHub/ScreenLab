@@ -29,6 +29,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fletching", "..\..\Fletchin
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Crafting", "..\..\Crafting\Crafting.csproj", "{B5E5B404-DD2C-4FF1-AA15-2FE134D92E0A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Agility", "..\..\Agility\Agility.csproj", "{5ECE1B3B-64E9-4581-AF6B-2042FD180D4C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -87,6 +89,10 @@ Global
 		{B5E5B404-DD2C-4FF1-AA15-2FE134D92E0A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B5E5B404-DD2C-4FF1-AA15-2FE134D92E0A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B5E5B404-DD2C-4FF1-AA15-2FE134D92E0A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5ECE1B3B-64E9-4581-AF6B-2042FD180D4C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5ECE1B3B-64E9-4581-AF6B-2042FD180D4C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5ECE1B3B-64E9-4581-AF6B-2042FD180D4C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5ECE1B3B-64E9-4581-AF6B-2042FD180D4C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
