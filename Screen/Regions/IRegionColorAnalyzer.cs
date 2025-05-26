@@ -16,5 +16,6 @@ namespace ScreenLab.Screen.Regions
         List<Point> GetAllMatchingPoints(Point referencePoint, Color targetColor, Direction[] directions, int tolerance = 10, double proximity = double.MaxValue);
         Direction? DirectionFromPoint(Point reference, Point target);
         bool IsInDirectionalCone(Point reference, Point target, Direction direction, double coneThresholdCos = 0.707); // ~45°
+        List<Point> GetAllMatchingPoints(Point referencePoint, Color targetColor, int tolerance = 10, double proximity = double.MaxValue);
     }
 }

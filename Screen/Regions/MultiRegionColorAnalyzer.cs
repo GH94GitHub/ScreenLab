@@ -563,6 +563,67 @@ namespace ScreenLab.Screen.Regions
 
             return matchingPoints;
         }
+        public List<Point> GetAllMatchingPoints(Point referencePoint, Color targetColor, int tolerance = 10, double proximity = double.MaxValue)
+        {
+            var matchingPoints = new List<Point>();
+
+            if (!HasSelection)
+                BeginSelection();
+
+            using (Bitmap bmp = GetBitmap())
+            {
+                Rectangle rect = new Rectangle(0, 0, bmp.Width, bmp.Height);
+                BitmapData data = bmp.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+
+                try
+                {
+                    int stride = data.Stride;
+                    nint scan0 = data.Scan0;
+
+                    double proximitySquared = proximity * proximity;
+
+                    unsafe
+                    {
+                        byte* ptr = (byte*)scan0;
+
+                        for (int y = 0; y < bmp.Height; y++)
+                        {
+                            for (int x = 0; x < bmp.Width; x++)
+                            {
+                                Point screenPoint = new Point(Selection.X + x, Selection.Y + y);
+
+                                int dx = screenPoint.X - referencePoint.X;
+                                int dy = screenPoint.Y - referencePoint.Y;
+                                double distanceSquared = dx * dx + dy * dy;
+
+                                if (distanceSquared > proximitySquared)
+                                    continue;
+
+                                byte* pixel = ptr + y * stride + x * 4;
+
+                                byte b = pixel[0];
+                                byte g = pixel[1];
+                                byte r = pixel[2];
+                                byte a = pixel[3];
+
+                                if (a == 0) continue;
+
+                                Color color = Color.FromArgb(a, r, g, b);
+                                if (color.IsColorMatch(targetColor, tolerance))
+                                    matchingPoints.Add(screenPoint);
+                            }
+                        }
+                    }
+                }
+                finally
+                {
+                    bmp.UnlockBits(data);
+                }
+            }
+
+            return matchingPoints;
+        }
+
         public List<Point> GetAllMatchingPoints(
             Point referencePoint,
             Color targetColor,
