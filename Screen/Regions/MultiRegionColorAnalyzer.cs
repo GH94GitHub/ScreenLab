@@ -1,7 +1,9 @@
 ﻿using ScreenLab.Extensions;
 using ScreenLab.Models;
 using System.CodeDom;
+using System.Collections.Concurrent;
 using System.Drawing.Imaging;
+using System.Linq;
 using static ScreenLab.Models.Directions;
 
 namespace ScreenLab.Screen.Regions
@@ -73,15 +75,17 @@ namespace ScreenLab.Screen.Regions
                 }
             }
         }
-        public Bitmap GetBitmap()
+        public Bitmap GetBitmap(Rectangle? rect = null)
         {
             if (!HasSelection)
                 throw new InvalidOperationException("No selection exists");
 
+            rect ??= this.Selection;
+
             try
             {
                 // Final image matches size of original selection
-                Bitmap fullBitmap = new Bitmap(Selection.Width, Selection.Height);
+                Bitmap fullBitmap = new Bitmap(rect.Value.Width, rect.Value.Height);
 
                 using (Graphics g = Graphics.FromImage(fullBitmap))
                 {
@@ -102,7 +106,7 @@ namespace ScreenLab.Screen.Regions
                         }
 
                         // Draw it at the correct offset in the final bitmap
-                        Point offset = new Point(region.X - Selection.X, region.Y - Selection.Y);
+                        Point offset = new Point(region.X - rect.Value.X, region.Y - rect.Value.Y);
                         g.DrawImageUnscaled(fragment, offset);
                     }
                 }
@@ -631,60 +635,32 @@ namespace ScreenLab.Screen.Regions
             int tolerance = 10,
             double proximity = double.MaxValue)
         {
-            var matchingPoints = new List<Point>();
             if (!HasSelection)
                 BeginSelection();
 
-            using (Bitmap bmp = GetBitmap())
-            {
-                Rectangle rect = new Rectangle(0, 0, bmp.Width, bmp.Height);
-                BitmapData data = bmp.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            var directionSet = new HashSet<Directions.Direction>(directions);
+            var matches = new ConcurrentBag<Point>();
+            double proximitySquared = proximity * proximity;
 
+            Bitmap original = GetBitmap();
+
+            int width = original.Width;
+            int height = original.Height;
+            byte[] pixelData;
+
+            using (Bitmap bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb))
+            {
+                using (Graphics g = Graphics.FromImage(bmp))
+                {
+                    g.DrawImageUnscaled(original, 0, 0);
+                }
+
+                BitmapData data = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
                 try
                 {
-                    int stride = data.Stride;
-                    nint scan0 = data.Scan0;
-                    double proximitySquared = proximity * proximity;
-
-                    // Direction cache per pixel
-                    Dictionary<Point, Directions.Direction?> directionMap = new();
-
-                    unsafe
-                    {
-                        byte* ptr = (byte*)scan0;
-
-                        for (int y = 0; y < bmp.Height; y++)
-                        {
-                            for (int x = 0; x < bmp.Width; x++)
-                            {
-                                Point screenPoint = new Point(Selection.X + x, Selection.Y + y);
-
-                                int dx = screenPoint.X - referencePoint.X;
-                                int dy = screenPoint.Y - referencePoint.Y;
-                                double distanceSquared = dx * dx + dy * dy;
-
-                                if (distanceSquared > proximitySquared)
-                                    continue;
-
-                                if (!directionMap.TryGetValue(screenPoint, out var dir))
-                                {
-                                    dir = DirectionFromPoint(referencePoint, screenPoint);
-                                    directionMap[screenPoint] = dir;
-                                }
-
-                                if (!dir.HasValue || !directions.Contains(dir.Value))
-                                    continue;
-
-                                byte* pixel = ptr + y * stride + x * 4;
-                                byte b = pixel[0], g = pixel[1], r = pixel[2], a = pixel[3];
-                                if (a == 0) continue;
-
-                                Color color = Color.FromArgb(a, r, g, b);
-                                if (color.IsColorMatch(targetColor, tolerance))
-                                    matchingPoints.Add(screenPoint);
-                            }
-                        }
-                    }
+                    int bytes = Math.Abs(data.Stride) * data.Height;
+                    pixelData = new byte[bytes];
+                    System.Runtime.InteropServices.Marshal.Copy(data.Scan0, pixelData, 0, bytes);
                 }
                 finally
                 {
@@ -692,7 +668,40 @@ namespace ScreenLab.Screen.Regions
                 }
             }
 
-            return matchingPoints;
+            Parallel.For(0, height, y =>
+            {
+                int stride = width * 4;
+                for (int x = 0; x < width; x++)
+                {
+                    int pixelIndex = y * stride + x * 4;
+                    byte b = pixelData[pixelIndex + 0];
+                    byte g = pixelData[pixelIndex + 1];
+                    byte r = pixelData[pixelIndex + 2];
+                    byte a = pixelData[pixelIndex + 3];
+
+                    if (a == 0) continue;
+
+                    int globalX = Selection.X + x;
+                    int globalY = Selection.Y + y;
+
+                    int dx = globalX - referencePoint.X;
+                    int dy = globalY - referencePoint.Y;
+
+                    double distSq = dx * dx + dy * dy;
+                    if (distSq > proximitySquared)
+                        continue;
+
+                    var dir = DirectionFromPoint(referencePoint, new Point(globalX, globalY));
+                    if (dir is not Direction direction || !directionSet.Contains(direction))
+                        continue;
+
+                    Color color = Color.FromArgb(a, r, g, b);
+                    if (color.IsColorMatch(targetColor, tolerance))
+                        matches.Add(new Point(globalX, globalY));
+                }
+            });
+
+            return matches.ToList();
         }
         public Direction? DirectionFromPoint(Point referencePoint, Point target)
         {

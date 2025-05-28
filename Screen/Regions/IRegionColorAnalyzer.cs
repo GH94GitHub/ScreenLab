@@ -5,7 +5,7 @@ namespace ScreenLab.Screen.Regions
     public interface IRegionColorAnalyzer
     {
         Color GetAverageColor();
-        Bitmap GetBitmap();
+        Bitmap GetBitmap(Rectangle? rect = null);
         Color GetDominantColor();
         Dictionary<Color, int> GetColorCount();
         Point? FindColorInRegion(Color targetColor, int tolerance = 10);
